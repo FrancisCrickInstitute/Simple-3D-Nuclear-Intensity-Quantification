@@ -15,6 +15,127 @@ This repo was originally built to quantify HIV capsid/CPSF6/HA intensity in infe
 segmentation and measurement logic is not HIV-specific — see [Adapting to other experiments](#adapting-to-other-experiments)
 below to reuse it for any experiment that needs per-nucleus intensity quantification across channels.
 
+---
+
+## Quick start for beginners
+
+If you're new to Python, Jupyter, or command-line tools, follow these steps to get up and running on your own laptop (Windows, Mac, or Linux).
+
+### Step 1: Install Git
+
+You'll need Git to download this repository.
+
+**Windows:**
+1. Download Git from https://git-scm.com/download/win
+2. Run the installer and accept all defaults
+
+**Mac:**
+1. Open Terminal (search "Terminal" in Spotlight)
+2. Type `git --version` and press Enter
+3. If not installed, it will prompt you to install Xcode Command Line Tools — follow the prompts
+
+**Linux:**
+```bash
+sudo apt install git   # Ubuntu/Debian
+# or
+sudo yum install git   # CentOS/RHEL
+```
+
+### Step 2: Clone this repository
+
+Open a terminal (Command Prompt on Windows, Terminal on Mac/Linux) and run:
+
+```bash
+git clone https://github.com/FrancisCrickInstitute/Simple-3D-Nuclear-Intensity-Quantification.git
+cd Simple-3D-Nuclear-Intensity-Quantification
+```
+
+This downloads all the code into a folder called `Simple-3D-Nuclear-Intensity-Quantification`.
+
+### Step 3: Install Pixi
+
+Pixi manages the Python environment and dependencies for this project.
+
+**All platforms:**
+1. Visit https://pixi.sh/latest/get_started/
+2. Follow the installation instructions for your operating system
+3. Verify installation by opening a new terminal and typing:
+   ```bash
+   pixi --version
+   ```
+
+### Step 4: Set up the environment
+
+From inside the repository folder (where you ran `cd` above), run:
+
+```bash
+pixi install
+```
+
+This creates a virtual environment with all required packages (numpy, pandas, scipy, bioio, etc.). It may take a few minutes on first run.
+
+### Step 5: Find the path to your data
+
+No need to copy files — you can leave your `.vsi` images wherever they are already stored. You just need to know the full folder path.
+
+**Finding the path:**
+- **Windows:** Open File Explorer, navigate to your data folder, click the address bar at the top, and copy the full path (e.g. `C:\Users\YourName\Documents\MyMicroscopeImages`)
+- **Mac:** Right-click the folder, hold **Option**, and click "Copy [foldername] as Pathname"
+- **Linux:** In a file browser, right-click and "Copy Location" or navigate there in a terminal and run `pwd`
+
+You'll use this path in the next step. Your filenames should start with a number, like `10_Multichannel Z-Stack_20260622_67.vsi` — this number is used to assign images to experimental conditions.
+
+### Step 6: Run the analysis
+
+You have two options:
+
+#### Option A: Use the Jupyter Notebook (recommended for beginners)
+
+The notebook walks through the analysis step-by-step with visual feedback at each stage.
+
+1. Start Jupyter:
+   ```bash
+   pixi run jupyter notebook
+   ```
+2. Your browser should open automatically. Click on `quantify_nuclei_intensity.ipynb`
+3. In the **Configuration** cell (near the top), change `DATA_DIR` to point at your data folder — use the path you found in Step 5, with quotes around it:
+   ```python
+   DATA_DIR = "C:\\Users\\YourName\\Documents\\MyMicroscopeImages"
+   ```
+   (On Mac/Linux use forward slashes: `"/home/yourname/MyMicroscopeImages"`)
+4. Read through the notebook cells — they explain what's happening at each step. Edit `CHANNEL_NAMES` and `CONDITION_MAPPING` as needed for your experiment.
+5. To run the analysis:
+   - Click on a cell (it will highlight with a blue border)
+   - Press **Shift+Enter** to run that cell and move to the next one
+   - Or click **Cell → Run All** from the menu to run everything at once
+6. Results will appear in the notebook and be saved to the `output` folder
+
+#### Option B: Run the script directly
+
+For a quick, non-interactive run (point it at your data folder instead of `./data`):
+
+```bash
+pixi run python quantify_nuclei_intensity.py --data-dir "C:\Users\YourName\Documents\MyMicroscopeImages"
+```
+
+On Mac/Linux:
+```bash
+pixi run python quantify_nuclei_intensity.py --data-dir "/home/yourname/MyMicroscopeImages"
+```
+
+See [Usage](#usage) below for all customization options.
+
+### Step 7: Check your results
+
+After the analysis completes, look in the `output` folder:
+
+- `nuclei_measurements.csv` — detailed measurements for every nucleus found
+- `summary_statistics.csv` — summary table grouped by experimental condition
+- `intensity_summary.png` — visualization showing intensity differences between conditions
+- `label_images/` — folder with overlay images showing where nuclei were detected (useful for quality checking)
+
+---
+
 ## Requirements
 
 This project uses [pixi](https://pixi.sh) for environment management. All dependencies (numpy, pandas, scipy,
@@ -80,3 +201,27 @@ default `--channel-names`. To reuse the pipeline for a different multi-channel e
 
 Everything downstream (per-nucleus metrics, per-condition summary, plots, label image overlays) works off those
 config values and needs no further changes.
+
+## Troubleshooting
+
+**"Command not found: pixi"**
+- Make sure you installed Pixi correctly (Step 3 above)
+- Try closing and reopening your terminal
+- Run `pixi --version` to verify it's working
+
+**"No VSI files found"**
+- Check that your `--data-dir` (or `DATA_DIR` in the notebook) points to the correct folder containing your `.vsi` files
+- Check that files actually end in `.vsi` (not `.vsi.txt` or similar)
+
+**Jupyter won't open**
+- After running `pixi run jupyter notebook`, look for a URL in the terminal output (starts with `http://localhost:8888`)
+- Copy and paste that URL into your browser manually
+
+**First run is very slow**
+- The first time you read a `.vsi` file, the system downloads a Java runtime (takes 1-2 minutes)
+- Subsequent runs will be much faster
+
+**Out of memory errors**
+- Large 3D image stacks use significant RAM
+- Close other applications while running the analysis
+- Consider processing fewer images at once
