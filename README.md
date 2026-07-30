@@ -213,6 +213,10 @@ config values and needs no further changes.
 - Check that your `--data-dir` (or `DATA_DIR` in the notebook) points to the correct folder containing your `.vsi` files
 - Check that files actually end in `.vsi` (not `.vsi.txt` or similar)
 
+**Processing is very slow**
+- If your data is stored on a network drive or server, transfer speeds can be a bottleneck — reading large 3D stacks over a slow connection can take a long time
+- It may be worth copying some of your files to your local hard drive first and pointing `--data-dir` at the local copy.
+
 **Jupyter won't open**
 - After running `pixi run jupyter notebook`, look for a URL in the terminal output (starts with `http://localhost:8888`)
 - Copy and paste that URL into your browser manually
