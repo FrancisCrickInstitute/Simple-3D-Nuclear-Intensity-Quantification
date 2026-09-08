@@ -2,7 +2,7 @@
 authors = ["Dave Barry <david.barry@crick.ac.uk>"]
 channels = ["conda-forge"]
 name = "hiv-quant"
-platforms = ["linux-64", "win-64"]
+platforms = ["linux-64", "win-64", "osx-arm64"]
 version = "0.1.0"
 
 [tasks]
