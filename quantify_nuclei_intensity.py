@@ -46,7 +46,7 @@ def get_condition_from_filename(filename, condition_mapping):
     numbers = re.findall(r"\d+", Path(filename).stem)
     if not numbers:
         return "Unknown"
-    return condition_mapping.get(int(numbers[0]), "Unknown")
+    return condition_mapping.get(int(numbers[-1]), "Unknown")
 
 
 def segment_nuclei_3d(dapi_stack, nuclei_diameter_px, size_tolerance):
