@@ -43,10 +43,13 @@ def get_condition_from_filename(filename, condition_mapping):
     """Extract image index from filename and return condition."""
     # Filenames are formatted like "10_Multichannel Z-Stack_20260622_67.vsi",
     # where the leading number is the file index used in condition_mapping.
-    numbers = re.findall(r"\d+", Path(filename).stem)
-    if not numbers:
+    # Match only the leading index (anchored at the start) rather than scanning
+    # for the first digit anywhere in the name, so trailing date/index digits
+    # can't be mistaken for the condition index.
+    match = re.match(r"(\d+)", Path(filename).stem)
+    if not match:
         return "Unknown"
-    return condition_mapping.get(int(numbers[-1]), "Unknown")
+    return condition_mapping.get(int(match.group(1)), "Unknown")
 
 
 def segment_nuclei_3d(dapi_stack, nuclei_diameter_px, size_tolerance):
@@ -164,9 +167,17 @@ def process_vsi_file(filepath, dapi_channel, channels, nuclei_diameter_px, size_
     print(f"Processing: {filepath}")
 
     try:
-        # Read image using bioio, collapsing the timepoint axis to get (C, Z, Y, X)
+        # Read image using bioio, collapsing the timepoint axis to get (C, Z, Y, X).
+        # Some inputs are 2D (single optical section) and have no Z dimension,
+        # so load a shape that doesn't force a Z axis, then normalize below.
         bio_image = BioImage(filepath)
-        image_data = bio_image.get_image_data("CZYX", T=0)
+        image_data = bio_image.get_image_data("CYX", T=0)
+        image_data = np.asarray(image_data)
+
+        # Normalize to 4D (C, Z, Y, X): insert a singleton Z if the source has no
+        # z-stack, so the 3D pipeline below works on single-slice images too.
+        if image_data.ndim == 3:
+            image_data = image_data[:, np.newaxis, :, :]
         dapi_stack = image_data[dapi_channel]
 
         # Segment nuclei in 3D
