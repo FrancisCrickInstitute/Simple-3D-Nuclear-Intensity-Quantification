@@ -164,8 +164,8 @@ pipeline was built for):
 | --- | --- | --- |
 | `--data-dir` | `./data` | Directory containing image files |
 | `--channel-names` | `DAPI HA CPSF6 Capsid` | Ordered list of channel names, one per channel index in the acquired image. Must include `DAPI`, which is used for nucleus segmentation |
-| `--nuclei-diameter-px` | `140` | Expected nucleus diameter in pixels, used to filter segmented objects by size |
-| `--size-tolerance` | `0.3` | Acceptable fractional deviation from `--nuclei-diameter-px` |
+| `--min-nuclei-diameter-px` | `98` | Smallest nucleus diameter in pixels to keep, used to filter segmented objects by size |
+| `--max-nuclei-diameter-px` | `182` | Largest nucleus diameter in pixels to keep, used to filter segmented objects by size |
 | `--condition-mapping` | built-in HIV-Quant mapping | JSON object mapping the numeric file index parsed from each filename to an experimental condition label, e.g. `'{"1": "ConditionA", "2": "ConditionB"}'` |
 
 Filenames are expected in the form `p<plate>_EXP<exp>_<group>_Multichannel Z-Stack_<date>_<id>` (any
@@ -200,8 +200,8 @@ default `--channel-names`. To reuse the pipeline for a different multi-channel e
 - Pass `--channel-names` with your own stain names in acquisition order (one per channel index), e.g.
   `--channel-names DAPI GFP mCherry`. The name at each position becomes the column/plot label for that channel, and
   whichever position is named `DAPI` (required) is used for nucleus segmentation. Any number of channels is fine.
-- Use `--nuclei-diameter-px`/`--size-tolerance` to match your expected nucleus size, or adjust the
-  thresholding/morphology steps in `segment_nuclei_3d` if your nuclear stain behaves differently.
+- Use `--min-nuclei-diameter-px`/`--max-nuclei-diameter-px` to match your expected nucleus size range, or adjust
+  the thresholding/morphology steps in `segment_nuclei_3d` if your nuclear stain behaves differently.
 - Use `--condition-mapping` to match your own experimental groups, or edit `get_condition_from_filename` if
   conditions aren't identified by a trailing numeric index in the filename.
 

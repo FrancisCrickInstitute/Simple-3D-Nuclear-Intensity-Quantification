@@ -18,8 +18,8 @@ from skimage.color import label2rgb
 DATA_DIR = "./data"
 OUTPUT_DIR = "./output"
 CHANNEL_NAMES = ["DAPI", "HA", "CPSF6", "Capsid"]
-NUCLEI_DIAMETER_PX = 140
-SIZE_TOLERANCE = 0.3
+MIN_NUCLEI_DIAMETER_PX = 98
+MAX_NUCLEI_DIAMETER_PX = 182
 LABEL_IMAGE_DIR = "./output/label_images"
 
 # File extensions discovered by the pipeline. Reading goes through BioImage,
@@ -60,14 +60,14 @@ def get_condition_from_filename(filename, condition_mapping):
     return condition_mapping.get(int(numbers[-1]), "Unknown")
 
 
-def segment_nuclei_3d(dapi_stack, nuclei_diameter_px, size_tolerance):
+def segment_nuclei_3d(dapi_stack, min_nuclei_diameter_px, max_nuclei_diameter_px):
     """
     Segment nuclei from 3D DAPI z-stack.
 
     Parameters:
     dapi_stack: 3D numpy array (z, y, x)
-    nuclei_diameter_px: expected nucleus diameter in pixels
-    size_tolerance: acceptable fractional deviation from nuclei_diameter_px
+    min_nuclei_diameter_px: smallest nucleus diameter in pixels to keep
+    max_nuclei_diameter_px: largest nucleus diameter in pixels to keep
 
     Returns:
     labeled_3d: 3D labeled image with nucleus IDs
@@ -91,8 +91,8 @@ def segment_nuclei_3d(dapi_stack, nuclei_diameter_px, size_tolerance):
     labeled_3d, num_features = label(binary_mask)
 
     # Filter by size: keep nuclei within acceptable size range
-    min_size = int(np.pi * (nuclei_diameter_px * (1 - size_tolerance) / 2) ** 2 / 10)
-    max_size = int(np.pi * (nuclei_diameter_px * (1 + size_tolerance) / 2) ** 2 * 10)
+    min_size = int(np.pi * (min_nuclei_diameter_px / 2) ** 2 / 10)
+    max_size = int(np.pi * (max_nuclei_diameter_px / 2) ** 2 * 10)
 
     # Voxel count per label, then relabel sequentially in one pass rather than
     # rescanning the full volume once per candidate nucleus.
@@ -157,7 +157,7 @@ def extract_intensity_metrics(image_data, labeled_nuclei, nucleus_ids, channels)
     return pd.DataFrame(metrics)
 
 
-def process_image_file(filepath, dapi_channel, channels, nuclei_diameter_px, size_tolerance, condition_mapping):
+def process_image_file(filepath, dapi_channel, channels, min_nuclei_diameter_px, max_nuclei_diameter_px, condition_mapping):
     """
     Process a single image file: segment nuclei and extract intensity metrics.
 
@@ -165,8 +165,8 @@ def process_image_file(filepath, dapi_channel, channels, nuclei_diameter_px, siz
     filepath: Path to an image file in any format BioImage can read (e.g. VSI, TIFF, CZI)
     dapi_channel: channel index of the DAPI (nuclear) stain, used for segmentation
     channels: list of (channel_name, channel_index) pairs to measure
-    nuclei_diameter_px: expected nucleus diameter in pixels
-    size_tolerance: acceptable fractional deviation from nuclei_diameter_px
+    min_nuclei_diameter_px: smallest nucleus diameter in pixels to keep
+    max_nuclei_diameter_px: largest nucleus diameter in pixels to keep
     condition_mapping: maps the trailing per-image index parsed from each filename to a condition label
 
     Returns:
@@ -189,7 +189,7 @@ def process_image_file(filepath, dapi_channel, channels, nuclei_diameter_px, siz
         dapi_stack = image_data[dapi_channel]
 
         # Segment nuclei in 3D
-        labeled_nuclei = segment_nuclei_3d(dapi_stack, nuclei_diameter_px, size_tolerance)
+        labeled_nuclei = segment_nuclei_3d(dapi_stack, min_nuclei_diameter_px, max_nuclei_diameter_px)
         num_nuclei = int(labeled_nuclei.max())
 
         print(f"  Found {num_nuclei} nuclei")
@@ -299,7 +299,7 @@ def plot_intensity_summary(results_df, plot_file, channels):
     plt.close(fig)
 
 
-def main(data_dir, channel_names, nuclei_diameter_px, size_tolerance, condition_mapping):
+def main(data_dir, channel_names, min_nuclei_diameter_px, max_nuclei_diameter_px, condition_mapping):
     """Main analysis pipeline."""
 
     if "DAPI" not in channel_names:
@@ -327,7 +327,7 @@ def main(data_dir, channel_names, nuclei_diameter_px, size_tolerance, condition_
 
     for image_file in image_files:
         df = process_image_file(
-            str(image_file), dapi_channel, channels, nuclei_diameter_px, size_tolerance, condition_mapping
+            str(image_file), dapi_channel, channels, min_nuclei_diameter_px, max_nuclei_diameter_px, condition_mapping
         )
         if df is not None and len(df) > 0:
             all_measurements.append(df)
@@ -373,13 +373,12 @@ def parse_args():
              f"segmentation (default: {' '.join(CHANNEL_NAMES)})",
     )
     parser.add_argument(
-        "--nuclei-diameter-px", type=int, default=NUCLEI_DIAMETER_PX,
-        help=f"Expected nucleus diameter in pixels, used to filter segmented objects by size "
-             f"(default: {NUCLEI_DIAMETER_PX})",
+        "--min-nuclei-diameter-px", type=int, default=MIN_NUCLEI_DIAMETER_PX,
+        help=f"Smallest nucleus diameter in pixels to keep (default: {MIN_NUCLEI_DIAMETER_PX})",
     )
     parser.add_argument(
-        "--size-tolerance", type=float, default=SIZE_TOLERANCE,
-        help=f"Acceptable fractional deviation from --nuclei-diameter-px (default: {SIZE_TOLERANCE})",
+        "--max-nuclei-diameter-px", type=int, default=MAX_NUCLEI_DIAMETER_PX,
+        help=f"Largest nucleus diameter in pixels to keep (default: {MAX_NUCLEI_DIAMETER_PX})",
     )
     parser.add_argument(
         "--condition-mapping", type=parse_condition_mapping, default=CONDITION_MAPPING,
@@ -393,5 +392,5 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     main(
-        args.data_dir, args.channel_names, args.nuclei_diameter_px, args.size_tolerance, args.condition_mapping,
+        args.data_dir, args.channel_names, args.min_nuclei_diameter_px, args.max_nuclei_diameter_px, args.condition_mapping,
     )

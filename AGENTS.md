@@ -33,8 +33,8 @@ pixi run python quantify_nuclei_intensity.py --data-dir ./data
 Run with `--help` for full option list. Key CLI options:
 - `--data-dir`: Directory containing image files (default: `./data`); discovery uses the `IMAGE_EXTENSIONS` constant
 - `--channel-names`: Ordered list of channel names matching acquisition order; must include `DAPI` (default: `DAPI HA CPSF6 Capsid`)
-- `--nuclei-diameter-px`: Expected nucleus diameter in pixels for size filtering (default: 140)
-- `--size-tolerance`: Fractional deviation tolerance from expected diameter (default: 0.3)
+- `--min-nuclei-diameter-px`: Smallest nucleus diameter in pixels to keep (default: 98)
+- `--max-nuclei-diameter-px`: Largest nucleus diameter in pixels to keep (default: 182)
 - `--condition-mapping`: JSON object mapping the trailing per-image numeric index to condition label
 
 ## Pipeline stages (in `quantify_nuclei_intensity.py`)
@@ -105,7 +105,7 @@ All outputs go to `./output/` (created automatically, not committed):
 1. **`pixi.lock` is gitignored**: Always commit changes to `pixi.toml` — the lockfile won't be tracked
 2. **JVM requirement**: First run may be slow due to JRE download for `bioio-bioformats`
 3. **Filename parsing is fixed**: `get_condition_from_filename` expects the trailing per-image index, `p<plate>_EXP<exp>_<group>_Multichannel Z-Stack_<date>_<id>` (any extension). If your filenames differ, edit this function — there's no CLI option for the parsing pattern
-4. **Size filtering formula**: The min/max voxel count bounds use an approximate spherical volume formula with arbitrary scaling factors (`/10` and `*10`). Adjust `--nuclei-diameter-px` and `--size-tolerance` if segmentation misses expected nuclei
+4. **Size filtering formula**: The min/max voxel count bounds use an approximate spherical volume formula with arbitrary scaling factors (`/10` and `*10`). Adjust `--min-nuclei-diameter-px` and `--max-nuclei-diameter-px` if segmentation misses expected nuclei
 5. **No error recovery**: If a file fails to process, it's skipped with a print message. Check console output for errors
 6. **Memory usage**: Loading full 4D stacks into memory — large datasets may need adjustment
 
@@ -121,7 +121,7 @@ No test suite exists. To verify changes:
 ## Common modifications
 
 **Adding a new channel**: Add name to `--channel-names` in correct acquisition order position
-**Changing nucleus size**: Adjust `--nuclei-diameter-px` and/or `--size-tolerance`
+**Changing nucleus size**: Adjust `--min-nuclei-diameter-px` and/or `--max-nuclei-diameter-px`
 **Different experimental conditions**: Update `--condition-mapping` JSON
 **Different filename format**: Edit `get_condition_from_filename` function
 **Different segmentation parameters**: Modify `segment_nuclei_3d` (smoothing sigma, threshold method, morphology operations)
