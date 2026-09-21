@@ -7,7 +7,8 @@
 ![Commit activity](https://img.shields.io/github/commit-activity/y/FrancisCrickInstitute/HIV-Quant?style=plastic)
 
 A general-purpose bioimage analysis pipeline for segmenting nuclei in 3D and quantifying per-channel intensity
-within them, from multi-channel confocal z-stacks (`.vsi` files). Nuclei are segmented from a DAPI channel, then
+within them, from multi-channel confocal z-stacks. Input is read via BioImage, so it accepts raw Olympus `.vsi`,
+TIFF/OME-TIFF, CZI, and other common microscopy formats. Nuclei are segmented from a DAPI channel, then
 per-nucleus intensity statistics are measured across the remaining channels, aggregated by experimental condition,
 and written out as CSVs, a summary plot, and per-slice label image overlays.
 
@@ -159,15 +160,17 @@ pipeline was built for):
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--data-dir` | `./data` | Directory containing `.vsi` files |
+| `--data-dir` | `./data` | Directory containing image files |
 | `--channel-names` | `DAPI HA CPSF6 Capsid` | Ordered list of channel names, one per channel index in the acquired image. Must include `DAPI`, which is used for nucleus segmentation |
 | `--nuclei-diameter-px` | `140` | Expected nucleus diameter in pixels, used to filter segmented objects by size |
 | `--size-tolerance` | `0.3` | Acceptable fractional deviation from `--nuclei-diameter-px` |
 | `--condition-mapping` | built-in HIV-Quant mapping | JSON object mapping the numeric file index parsed from each filename to an experimental condition label, e.g. `'{"1": "ConditionA", "2": "ConditionB"}'` |
 
-Filenames are expected in the form `<index>_Multichannel Z-Stack_<date>_<n>.vsi`, e.g.
+Filenames are expected in the form `<index>_Multichannel Z-Stack_<date>_<n>` (any extension), e.g.
 `10_Multichannel Z-Stack_20260622_67.vsi`. The leading index is looked up in `--condition-mapping` to assign each
-image to an experimental condition.
+image to an experimental condition. Input files may be any format BioImage can read (`.vsi`, `.tif`/`.ome.tiff`,
+`.czi`, `.lif`, `.nd2`, `.zarr`, `.oir`); the pipeline discovers files by the `IMAGE_EXTENSIONS` list in
+`quantify_nuclei_intensity.py`, which you can extend if your images use a different extension.
 
 ## Output
 
@@ -209,9 +212,9 @@ config values and needs no further changes.
 - Try closing and reopening your terminal
 - Run `pixi --version` to verify it's working
 
-**"No VSI files found"**
-- Check that your `--data-dir` (or `DATA_DIR` in the notebook) points to the correct folder containing your `.vsi` files
-- Check that files actually end in `.vsi` (not `.vsi.txt` or similar)
+**"No image files found"**
+- Check that your `--data-dir` (or `DATA_DIR` in the notebook) points to the correct folder containing your images
+- Check that files use an extension in `IMAGE_EXTENSIONS` (`.vsi`, `.tif`, `.czi`, etc.). If your format differs, add its extension to `IMAGE_EXTENSIONS` in `quantify_nuclei_intensity.py`
 
 **Processing is very slow**
 - If your data is stored on a network drive or server, transfer speeds can be a bottleneck — reading large 3D stacks over a slow connection can take a long time
@@ -222,7 +225,7 @@ config values and needs no further changes.
 - Copy and paste that URL into your browser manually
 
 **First run is very slow**
-- The first time you read a `.vsi` file, the system downloads a Java runtime (takes 1-2 minutes)
+- The first time you read a file that needs a JVM (e.g. `.vsi`, `.czi`, `.lif`), the system downloads a Java runtime (takes 1-2 minutes)
 - Subsequent runs will be much faster
 
 **Out of memory errors**

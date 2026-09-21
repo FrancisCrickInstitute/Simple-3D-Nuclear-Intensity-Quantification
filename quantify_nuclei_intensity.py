@@ -22,6 +22,11 @@ NUCLEI_DIAMETER_PX = 140
 SIZE_TOLERANCE = 0.3
 LABEL_IMAGE_DIR = "./output/label_images"
 
+# File extensions discovered by the pipeline. Reading goes through BioImage,
+# which supports many formats; this list is the common microscopy set and can
+# be extended if your images use a different extension.
+IMAGE_EXTENSIONS = (".vsi", ".tif", ".tiff", ".czi", ".lif", ".nd2", ".zarr", ".oir")
+
 # Default experimental conditions based on file indices
 CONDITION_MAPPING = {
     7: "D37_RR-VLPs", 10: "D37_RR-VLPs", 11: "D37_RR-VLPs", 12: "D37_RR-VLPs", 13: "D37_RR-VLPs",
@@ -43,6 +48,8 @@ def get_condition_from_filename(filename, condition_mapping):
     """Extract image index from filename and return condition."""
     # Filenames are formatted like "10_Multichannel Z-Stack_20260622_67.vsi",
     # where the leading number is the file index used in condition_mapping.
+    # The extension varies by microscope/image format; only the leading index
+    # matters here.
     # Match only the leading index (anchored at the start) rather than scanning
     # for the first digit anywhere in the name, so trailing date/index digits
     # can't be mistaken for the condition index.
@@ -149,12 +156,12 @@ def extract_intensity_metrics(image_data, labeled_nuclei, nucleus_ids, channels)
     return pd.DataFrame(metrics)
 
 
-def process_vsi_file(filepath, dapi_channel, channels, nuclei_diameter_px, size_tolerance, condition_mapping):
+def process_image_file(filepath, dapi_channel, channels, nuclei_diameter_px, size_tolerance, condition_mapping):
     """
-    Process a single VSI file: segment nuclei and extract intensity metrics.
+    Process a single image file: segment nuclei and extract intensity metrics.
 
     Parameters:
-    filepath: Path to VSI file
+    filepath: Path to an image file in any format BioImage can read (e.g. VSI, TIFF, CZI)
     dapi_channel: channel index of the DAPI (nuclear) stain, used for segmentation
     channels: list of (channel_name, channel_index) pairs to measure
     nuclei_diameter_px: expected nucleus diameter in pixels
@@ -210,7 +217,7 @@ def summarize_by_condition(results_df):
     Compute per-condition summary statistics (mean/std of each intensity metric).
 
     Parameters:
-    results_df: per-nucleus measurements DataFrame from process_vsi_file
+    results_df: per-nucleus measurements DataFrame from process_image_file
 
     Returns:
     pandas DataFrame with one row per condition
@@ -248,7 +255,7 @@ def plot_intensity_summary(results_df, plot_file, channels):
     reference (its own panel would just be a ~1.0 flat line).
 
     Parameters:
-    results_df: per-nucleus measurements DataFrame from process_vsi_file
+    results_df: per-nucleus measurements DataFrame from process_image_file
     plot_file: path to save the PNG to
     channels: list of (channel_name, channel_index) pairs that were measured
     """
@@ -301,21 +308,25 @@ def main(data_dir, channel_names, nuclei_diameter_px, size_tolerance, condition_
     channels = [(name, idx) for idx, name in enumerate(channel_names)]
     dapi_channel = channel_names.index("DAPI")
 
-    # Find all VSI files in data directory
-    vsi_files = list(Path(data_dir).glob("*.vsi"))
+    # Find all image files in the data directory (any BioImage-readable format,
+    # not just .vsi)
+    image_files = sorted(
+        f for f in Path(data_dir).iterdir()
+        if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
+    )
 
-    if not vsi_files:
-        print(f"No VSI files found in {data_dir}")
+    if not image_files:
+        print(f"No image files found in {data_dir}")
         return
 
-    print(f"Found {len(vsi_files)} VSI files")
+    print(f"Found {len(image_files)} image files")
 
     # Process each file and collect results
     all_measurements = []
 
-    for vsi_file in sorted(vsi_files):
-        df = process_vsi_file(
-            str(vsi_file), dapi_channel, channels, nuclei_diameter_px, size_tolerance, condition_mapping
+    for image_file in image_files:
+        df = process_image_file(
+            str(image_file), dapi_channel, channels, nuclei_diameter_px, size_tolerance, condition_mapping
         )
         if df is not None and len(df) > 0:
             all_measurements.append(df)
@@ -348,11 +359,11 @@ def main(data_dir, channel_names, nuclei_diameter_px, size_tolerance, condition_
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Segment nuclei and quantify per-channel intensity from VSI z-stacks."
+        description="Segment nuclei and quantify per-channel intensity from multi-channel microscopy images."
     )
     parser.add_argument(
         "--data-dir", default=DATA_DIR,
-        help=f"Directory containing .vsi files (default: {DATA_DIR})",
+        help=f"Directory containing image files (default: {DATA_DIR})",
     )
     parser.add_argument(
         "--channel-names", nargs="+", metavar="NAME", default=CHANNEL_NAMES,

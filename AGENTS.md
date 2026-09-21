@@ -4,7 +4,7 @@ Guide for AI agents working in this repository.
 
 ## Project overview
 
-HIV-Quant is a bioimage analysis pipeline that segments nuclei in 3D from multi-channel confocal z-stacks (`.vsi` files) and quantifies per-channel intensity within them. It was originally built for HIV capsid/CPSF6/HA intensity measurement but is general-purpose — all key parameters are CLI options.
+HIV-Quant is a bioimage analysis pipeline that segments nuclei in 3D from multi-channel microscopy images and quantifies per-channel intensity within them. It was originally built for HIV capsid/CPSF6/HA intensity measurement from Olympus `.vsi` files but is general-purpose — all key parameters are CLI options, and input is read via BioImage so any supported format (`.vsi`, TIFF/OME-TIFF, `.czi`, `.lif`, `.nd2`, `.zarr`, `.oir`, etc.) works.
 
 **Single-file architecture**: Everything lives in `quantify_nuclei_intensity.py` plus a Jupyter notebook (`quantify_nuclei_intensity.ipynb`). No package structure, no tests, no CI.
 
@@ -31,7 +31,7 @@ pixi run python quantify_nuclei_intensity.py --data-dir ./data
 ```
 
 Run with `--help` for full option list. Key CLI options:
-- `--data-dir`: Directory containing `.vsi` files (default: `./data`)
+- `--data-dir`: Directory containing image files (default: `./data`); discovery uses the `IMAGE_EXTENSIONS` constant
 - `--channel-names`: Ordered list of channel names matching acquisition order; must include `DAPI` (default: `DAPI HA CPSF6 Capsid`)
 - `--nuclei-diameter-px`: Expected nucleus diameter in pixels for size filtering (default: 140)
 - `--size-tolerance`: Fractional deviation tolerance from expected diameter (default: 0.3)
@@ -42,9 +42,9 @@ Run with `--help` for full option list. Key CLI options:
 The script runs linearly through these stages:
 
 1. **CLI parsing** (`parse_args`): All configuration comes from CLI args or module-level constants
-2. **File discovery**: Globs `*.vsi` files under `--data-dir`
-3. **Per-file processing** (`process_vsi_file`):
-   - Loads `.vsi` via `BioImage.get_image_data("CZYX", T=0)` → 4D array `(channels, z, y, x)`
+2. **File discovery**: Lists files under `--data-dir` whose extension is in `IMAGE_EXTENSIONS`
+3. **Per-file processing** (`process_image_file`):
+   - Loads via `BioImage.get_image_data("CYX", T=0)`, normalized to a 4D array `(channels, z, y, x)` (a singleton Z is inserted for 2D inputs)
    - Extracts DAPI stack from configured channel index
    - Segments nuclei in 3D (`segment_nuclei_3d`)
    - Saves per-slice label images (`save_label_images`)
@@ -88,9 +88,9 @@ All outputs go to `./output/` (created automatically, not committed):
 
 ## Input data expectations
 
-- Files must be `.vsi` format (Olympus)
+- Files may be in any format BioImage can read (`.vsi`, `.tif`/`.ome.tiff`, `.czi`, `.lif`, `.nd2`, `.zarr`, `.oir`); discovery is restricted to the extensions in `IMAGE_EXTENSIONS`
 - Filenames should start with a numeric index for condition mapping: `<index>_...`
-- Reading `.vsi` goes through `bioio-bioformats`, which requires a JVM (downloads via `cjdk` on first run if needed)
+- Reading Java-requiring formats (`.vsi`, `.czi`, `.lif`) goes through `bioio-bioformats`, which requires a JVM (downloads via `cjdk` on first run if needed)
 
 ## Important conventions
 
@@ -104,7 +104,7 @@ All outputs go to `./output/` (created automatically, not committed):
 
 1. **`pixi.lock` is gitignored**: Always commit changes to `pixi.toml` — the lockfile won't be tracked
 2. **JVM requirement**: First run may be slow due to JRE download for `bioio-bioformats`
-3. **Filename parsing is fixed**: `get_condition_from_filename` expects `<index>_Multichannel Z-Stack_<date>_<n>.vsi` format. If your filenames differ, edit this function — there's no CLI option for the parsing pattern
+3. **Filename parsing is fixed**: `get_condition_from_filename` expects `<index>_Multichannel Z-Stack_<date>_<n>` (any extension). If your filenames differ, edit this function — there's no CLI option for the parsing pattern
 4. **Size filtering formula**: The min/max voxel count bounds use an approximate spherical volume formula with arbitrary scaling factors (`/10` and `*10`). Adjust `--nuclei-diameter-px` and `--size-tolerance` if segmentation misses expected nuclei
 5. **No error recovery**: If a file fails to process, it's skipped with a print message. Check console output for errors
 6. **Memory usage**: Loading full 4D stacks into memory — large datasets may need adjustment
