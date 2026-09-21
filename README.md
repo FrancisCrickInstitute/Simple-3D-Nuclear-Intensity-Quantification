@@ -84,7 +84,9 @@ No need to copy files — you can leave your `.vsi` images wherever they are alr
 - **Mac:** Right-click the folder, hold **Option**, and click "Copy [foldername] as Pathname"
 - **Linux:** In a file browser, right-click and "Copy Location" or navigate there in a terminal and run `pwd`
 
-You'll use this path in the next step. Your filenames should start with a number, like `10_Multichannel Z-Stack_20260622_67.vsi` — this number is used to assign images to experimental conditions.
+You'll use this path in the next step. Each image's filename ends with a unique index used to look up its
+condition, e.g. `p34_EXP1_11_Multichannel Z-Stack_20260805_140.vsi` ends in `140`. That trailing number is
+mapped to an experimental condition via `CONDITION_MAPPING`.
 
 ### Step 6: Run the analysis
 
@@ -166,11 +168,12 @@ pipeline was built for):
 | `--size-tolerance` | `0.3` | Acceptable fractional deviation from `--nuclei-diameter-px` |
 | `--condition-mapping` | built-in HIV-Quant mapping | JSON object mapping the numeric file index parsed from each filename to an experimental condition label, e.g. `'{"1": "ConditionA", "2": "ConditionB"}'` |
 
-Filenames are expected in the form `<index>_Multichannel Z-Stack_<date>_<n>` (any extension), e.g.
-`10_Multichannel Z-Stack_20260622_67.vsi`. The leading index is looked up in `--condition-mapping` to assign each
-image to an experimental condition. Input files may be any format BioImage can read (`.vsi`, `.tif`/`.ome.tiff`,
-`.czi`, `.lif`, `.nd2`, `.zarr`, `.oir`); the pipeline discovers files by the `IMAGE_EXTENSIONS` list in
-`quantify_nuclei_intensity.py`, which you can extend if your images use a different extension.
+Filenames are expected in the form `p<plate>_EXP<exp>_<group>_Multichannel Z-Stack_<date>_<id>` (any
+extension), e.g. `p34_EXP1_11_Multichannel Z-Stack_20260805_140.vsi`. The trailing per-image index (`140`) is
+looked up in `--condition-mapping` to assign each image to an experimental condition. Input files may be any
+format BioImage can read (`.vsi`, `.tif`/`.ome.tiff`, `.czi`, `.lif`, `.nd2`, `.zarr`, `.oir`); the pipeline
+discovers files by the `IMAGE_EXTENSIONS` list in `quantify_nuclei_intensity.py`, which you can extend if your
+images use a different extension.
 
 ## Output
 
@@ -200,7 +203,7 @@ default `--channel-names`. To reuse the pipeline for a different multi-channel e
 - Use `--nuclei-diameter-px`/`--size-tolerance` to match your expected nucleus size, or adjust the
   thresholding/morphology steps in `segment_nuclei_3d` if your nuclear stain behaves differently.
 - Use `--condition-mapping` to match your own experimental groups, or edit `get_condition_from_filename` if
-  conditions aren't identified by a leading numeric index in the filename.
+  conditions aren't identified by a trailing numeric index in the filename.
 
 Everything downstream (per-nucleus metrics, per-condition summary, plots, label image overlays) works off those
 config values and needs no further changes.

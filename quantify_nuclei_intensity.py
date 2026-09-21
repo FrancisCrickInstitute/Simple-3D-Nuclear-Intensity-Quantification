@@ -27,11 +27,14 @@ LABEL_IMAGE_DIR = "./output/label_images"
 # be extended if your images use a different extension.
 IMAGE_EXTENSIONS = (".vsi", ".tif", ".tiff", ".czi", ".lif", ".nd2", ".zarr", ".oir")
 
-# Default experimental conditions based on file indices
+# Default experimental conditions based on the trailing per-image index in each
+# filename (see get_condition_from_filename). This mirrors the mapping that was
+# hand-verified by the experimenter for the p34/EXP1 dataset.
 CONDITION_MAPPING = {
-    7: "D37_RR-VLPs", 10: "D37_RR-VLPs", 11: "D37_RR-VLPs", 12: "D37_RR-VLPs", 13: "D37_RR-VLPs",
-    14: "D102-VLPs", 15: "D102-VLPs", 16: "D102-VLPs", 22: "D102-VLPs",
-    17: "Uninfected", 18: "Uninfected", 19: "Uninfected", 20: "Uninfected", 21: "Uninfected"
+    114: "D37_RR-VLPs", 115: "D37_RR-VLPs", 116: "D37_RR-VLPs",
+    121: "D37_RR-VLPs", 122: "D37_RR-VLPs", 123: "D37_RR-VLPs", 124: "D37_RR-VLPs",
+    140: "D102-VLPs", 141: "D102-VLPs", 142: "D102-VLPs", 143: "D102-VLPs", 144: "D102-VLPs",
+    125: "Uninfected", 126: "Uninfected", 127: "Uninfected", 128: "Uninfected", 129: "Uninfected",
 }
 
 # Create output directory if it doesn't exist
@@ -46,17 +49,15 @@ def parse_condition_mapping(s):
 
 def get_condition_from_filename(filename, condition_mapping):
     """Extract image index from filename and return condition."""
-    # Filenames are formatted like "10_Multichannel Z-Stack_20260622_67.vsi",
-    # where the leading number is the file index used in condition_mapping.
-    # The extension varies by microscope/image format; only the leading index
-    # matters here.
-    # Match only the leading index (anchored at the start) rather than scanning
-    # for the first digit anywhere in the name, so trailing date/index digits
-    # can't be mistaken for the condition index.
-    match = re.match(r"(\d+)", Path(filename).stem)
-    if not match:
+    # Filenames are formatted like "p34_EXP1_11_Multichannel Z-Stack_20260805_140.vsi",
+    # where the trailing number (140) is the per-image index used as the key in
+    # condition_mapping. All other digits (plate, experiment, group, date) are
+    # ignored. Using the last number rather than the first keeps the lookup
+    # stable whether or not a plate/experiment prefix is present.
+    numbers = re.findall(r"\d+", Path(filename).stem)
+    if not numbers:
         return "Unknown"
-    return condition_mapping.get(int(match.group(1)), "Unknown")
+    return condition_mapping.get(int(numbers[-1]), "Unknown")
 
 
 def segment_nuclei_3d(dapi_stack, nuclei_diameter_px, size_tolerance):
@@ -166,7 +167,7 @@ def process_image_file(filepath, dapi_channel, channels, nuclei_diameter_px, siz
     channels: list of (channel_name, channel_index) pairs to measure
     nuclei_diameter_px: expected nucleus diameter in pixels
     size_tolerance: acceptable fractional deviation from nuclei_diameter_px
-    condition_mapping: maps the numeric file index parsed from each filename to a condition label
+    condition_mapping: maps the trailing per-image index parsed from each filename to a condition label
 
     Returns:
     pandas DataFrame with per-nucleus measurements

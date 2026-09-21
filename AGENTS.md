@@ -35,7 +35,7 @@ Run with `--help` for full option list. Key CLI options:
 - `--channel-names`: Ordered list of channel names matching acquisition order; must include `DAPI` (default: `DAPI HA CPSF6 Capsid`)
 - `--nuclei-diameter-px`: Expected nucleus diameter in pixels for size filtering (default: 140)
 - `--size-tolerance`: Fractional deviation tolerance from expected diameter (default: 0.3)
-- `--condition-mapping`: JSON object mapping numeric file index to condition label
+- `--condition-mapping`: JSON object mapping the trailing per-image numeric index to condition label
 
 ## Pipeline stages (in `quantify_nuclei_intensity.py`)
 
@@ -68,7 +68,7 @@ The script runs linearly through these stages:
 - Computes all stats for all nuclei at once per channel (vectorized, not per-nucleus loop)
 
 **Condition mapping** (`get_condition_from_filename`):
-- Parses leading numeric index from filenames like `10_Multichannel Z-Stack_20260622_67.vsi`
+- Parses the trailing numeric index from filenames like `p34_EXP1_11_Multichannel Z-Stack_20260805_140.vsi` (index `140`)
 - Looks up index in `--condition-mapping` JSON object
 - Returns "Unknown" if no match
 
@@ -89,7 +89,7 @@ All outputs go to `./output/` (created automatically, not committed):
 ## Input data expectations
 
 - Files may be in any format BioImage can read (`.vsi`, `.tif`/`.ome.tiff`, `.czi`, `.lif`, `.nd2`, `.zarr`, `.oir`); discovery is restricted to the extensions in `IMAGE_EXTENSIONS`
-- Filenames should start with a numeric index for condition mapping: `<index>_...`
+- Filenames end with a numeric index used for condition mapping: `p<plate>_EXP<exp>_<group>_..._<id>`
 - Reading Java-requiring formats (`.vsi`, `.czi`, `.lif`) goes through `bioio-bioformats`, which requires a JVM (downloads via `cjdk` on first run if needed)
 
 ## Important conventions
@@ -104,7 +104,7 @@ All outputs go to `./output/` (created automatically, not committed):
 
 1. **`pixi.lock` is gitignored**: Always commit changes to `pixi.toml` — the lockfile won't be tracked
 2. **JVM requirement**: First run may be slow due to JRE download for `bioio-bioformats`
-3. **Filename parsing is fixed**: `get_condition_from_filename` expects `<index>_Multichannel Z-Stack_<date>_<n>` (any extension). If your filenames differ, edit this function — there's no CLI option for the parsing pattern
+3. **Filename parsing is fixed**: `get_condition_from_filename` expects the trailing per-image index, `p<plate>_EXP<exp>_<group>_Multichannel Z-Stack_<date>_<id>` (any extension). If your filenames differ, edit this function — there's no CLI option for the parsing pattern
 4. **Size filtering formula**: The min/max voxel count bounds use an approximate spherical volume formula with arbitrary scaling factors (`/10` and `*10`). Adjust `--nuclei-diameter-px` and `--size-tolerance` if segmentation misses expected nuclei
 5. **No error recovery**: If a file fails to process, it's skipped with a print message. Check console output for errors
 6. **Memory usage**: Loading full 4D stacks into memory — large datasets may need adjustment
