@@ -18,8 +18,8 @@ from skimage.color import label2rgb
 DATA_DIR = "./data"
 OUTPUT_DIR = "./output"
 CHANNEL_NAMES = ["DAPI", "HA", "CPSF6", "Capsid"]
-MIN_NUCLEI_DIAMETER_PX = 98
-MAX_NUCLEI_DIAMETER_PX = 182
+MIN_NUCLEI_DIAMETER_UM = 5.0
+MAX_NUCLEI_DIAMETER_UM = 20.0
 LABEL_IMAGE_DIR = "./output/label_images"
 
 # File extensions discovered by the pipeline. Reading goes through BioImage,
@@ -60,14 +60,73 @@ def get_condition_from_filename(filename, condition_mapping):
     return condition_mapping.get(int(numbers[-1]), "Unknown")
 
 
-def segment_nuclei_3d(dapi_stack, min_nuclei_diameter_px, max_nuclei_diameter_px):
+def get_physical_pixel_sizes_um(bio_image):
+    """
+    Return the physical size of one voxel along (z, y, x) in micrometers.
+
+    BioImage exposes the voxel spacing via ``physical_pixel_sizes`` (floats in
+    the order Z, Y, X) and attaches each dimension's unit to the corresponding
+    entry in ``dimension_properties``. The unit registry is pinned to SI-ish
+    length units, so we convert each value to micrometers and fall back to
+    ``None`` for any axis whose spacing or unit is missing.
+
+    Returns:
+    (z_um, y_um, x_um) tuple of floats, or None if no usable spacing is found.
+    """
+    try:
+        sizes = bio_image.physical_pixel_sizes
+        dim_props = bio_image.dimension_properties
+    except Exception:
+        return None
+
+    out = []
+    for axis, value in zip(("Z", "Y", "X"), sizes):
+        if value is None:
+            out.append(None)
+            continue
+        unit = getattr(getattr(dim_props, axis, None), "unit", None)
+        if unit is None:
+            # Assume the value is already in micrometers when no unit is given.
+            out.append(float(value))
+            continue
+        try:
+            out.append(float((value * unit).to("micrometer").magnitude))
+        except Exception:
+            # Non-length unit (e.g. a time axis) or unparseable unit; skip.
+            out.append(None)
+
+    return tuple(out)
+
+
+def diameter_um_to_voxels(diameter_um, z_um, y_um, x_um, scale=1.0):
+    """
+    Convert a spherical nucleus diameter in micrometers to an approximate voxel
+    count, using the physical voxel spacing to translate cross-sectional area.
+
+    The size filter counts voxels per label, so the diameter is turned into an
+    in-plane circular area (µm^2) and divided by the area of a single XY voxel
+    to get an approximate voxel count. ``scale`` applies the same 10x loosening
+    used by the original heuristic: the caller passes 0.1 for the lower bound
+    and 10.0 for the upper bound.
+
+    Returns:
+    Integer voxel count.
+    """
+    # Cross-sectional area of the nucleus (µm^2)
+    area_um2 = np.pi * (diameter_um / 2) ** 2
+    # Physical area of a single XY voxel (µm^2)
+    voxel_area_um2 = y_um * x_um
+    return int(scale * area_um2 / voxel_area_um2)
+
+
+def segment_nuclei_3d(dapi_stack, min_voxels, max_voxels):
     """
     Segment nuclei from 3D DAPI z-stack.
 
     Parameters:
     dapi_stack: 3D numpy array (z, y, x)
-    min_nuclei_diameter_px: smallest nucleus diameter in pixels to keep
-    max_nuclei_diameter_px: largest nucleus diameter in pixels to keep
+    min_voxels: smallest nucleus size (in voxels) to keep, or None to keep all
+    max_voxels: largest nucleus size (in voxels) to keep, or None to keep all
 
     Returns:
     labeled_3d: 3D labeled image with nucleus IDs
@@ -90,14 +149,14 @@ def segment_nuclei_3d(dapi_stack, min_nuclei_diameter_px, max_nuclei_diameter_px
     # Label connected components in 3D
     labeled_3d, num_features = label(binary_mask)
 
-    # Filter by size: keep nuclei within acceptable size range
-    min_size = int(np.pi * (min_nuclei_diameter_px / 2) ** 2 / 10)
-    max_size = int(np.pi * (max_nuclei_diameter_px / 2) ** 2 * 10)
-
-    # Voxel count per label, then relabel sequentially in one pass rather than
-    # rescanning the full volume once per candidate nucleus.
+    # Filter by size: keep nuclei whose voxel count falls inside the bounds
+    # supplied by the caller. A None bound disables that side of the filter.
     voxel_counts = np.bincount(labeled_3d.ravel(), minlength=num_features + 1)
-    keep = (voxel_counts >= min_size) & (voxel_counts <= max_size)
+    keep = np.ones(num_features + 1, dtype=bool)
+    if min_voxels is not None:
+        keep &= voxel_counts >= min_voxels
+    if max_voxels is not None:
+        keep &= voxel_counts <= max_voxels
     keep[0] = False  # background is never a nucleus
 
     new_labels = np.zeros(num_features + 1, dtype=labeled_3d.dtype)
@@ -157,7 +216,7 @@ def extract_intensity_metrics(image_data, labeled_nuclei, nucleus_ids, channels)
     return pd.DataFrame(metrics)
 
 
-def process_image_file(filepath, dapi_channel, channels, min_nuclei_diameter_px, max_nuclei_diameter_px, condition_mapping):
+def process_image_file(filepath, dapi_channel, channels, min_nuclei_diameter_um, max_nuclei_diameter_um, condition_mapping):
     """
     Process a single image file: segment nuclei and extract intensity metrics.
 
@@ -165,8 +224,8 @@ def process_image_file(filepath, dapi_channel, channels, min_nuclei_diameter_px,
     filepath: Path to an image file in any format BioImage can read (e.g. VSI, TIFF, CZI)
     dapi_channel: channel index of the DAPI (nuclear) stain, used for segmentation
     channels: list of (channel_name, channel_index) pairs to measure
-    min_nuclei_diameter_px: smallest nucleus diameter in pixels to keep
-    max_nuclei_diameter_px: largest nucleus diameter in pixels to keep
+    min_nuclei_diameter_um: smallest nucleus diameter in micrometers to keep
+    max_nuclei_diameter_um: largest nucleus diameter in micrometers to keep
     condition_mapping: maps the trailing per-image index parsed from each filename to a condition label
 
     Returns:
@@ -188,8 +247,23 @@ def process_image_file(filepath, dapi_channel, channels, min_nuclei_diameter_px,
             image_data = image_data[:, np.newaxis, :, :]
         dapi_stack = image_data[dapi_channel]
 
+        # Translate the physical-size thresholds (micrometers) into voxel-count
+        # bounds using this file's own pixel spacing. If spacing is unavailable,
+        # disable size filtering rather than guessing in pixels.
+        pixel_sizes = get_physical_pixel_sizes_um(bio_image)
+        if pixel_sizes and pixel_sizes[1] and pixel_sizes[2]:
+            z_um, y_um, x_um = pixel_sizes
+            min_voxels = diameter_um_to_voxels(min_nuclei_diameter_um, z_um, y_um, x_um, scale=0.1)
+            max_voxels = diameter_um_to_voxels(max_nuclei_diameter_um, z_um, y_um, x_um, scale=10.0)
+            area_per_voxel_um2 = y_um * x_um
+        else:
+            print(f"  Warning: no physical pixel size found; size filtering disabled for {filepath}")
+            min_voxels = None
+            max_voxels = None
+            area_per_voxel_um2 = None
+
         # Segment nuclei in 3D
-        labeled_nuclei = segment_nuclei_3d(dapi_stack, min_nuclei_diameter_px, max_nuclei_diameter_px)
+        labeled_nuclei = segment_nuclei_3d(dapi_stack, min_voxels, max_voxels)
         num_nuclei = int(labeled_nuclei.max())
 
         print(f"  Found {num_nuclei} nuclei")
@@ -203,6 +277,16 @@ def process_image_file(filepath, dapi_channel, channels, min_nuclei_diameter_px,
         measurements = extract_intensity_metrics(
             image_data, labeled_nuclei, np.arange(1, num_nuclei + 1), channels
         )
+
+        # Add per-nucleus physical size (voxel count scaled by voxel area) so
+        # sizes are comparable across images with different pixel spacing.
+        if num_nuclei > 0:
+            voxel_counts = np.bincount(labeled_nuclei.ravel(), minlength=num_nuclei + 1)[1:]
+            if area_per_voxel_um2 is not None:
+                measurements["area_um2"] = voxel_counts * area_per_voxel_um2
+            else:
+                measurements["area_voxels"] = voxel_counts
+
         measurements["filename"] = filename
         measurements["condition"] = get_condition_from_filename(filename, condition_mapping)
 
@@ -299,7 +383,7 @@ def plot_intensity_summary(results_df, plot_file, channels):
     plt.close(fig)
 
 
-def main(data_dir, channel_names, min_nuclei_diameter_px, max_nuclei_diameter_px, condition_mapping):
+def main(data_dir, channel_names, min_nuclei_diameter_um, max_nuclei_diameter_um, condition_mapping):
     """Main analysis pipeline."""
 
     if "DAPI" not in channel_names:
@@ -327,7 +411,7 @@ def main(data_dir, channel_names, min_nuclei_diameter_px, max_nuclei_diameter_px
 
     for image_file in image_files:
         df = process_image_file(
-            str(image_file), dapi_channel, channels, min_nuclei_diameter_px, max_nuclei_diameter_px, condition_mapping
+            str(image_file), dapi_channel, channels, min_nuclei_diameter_um, max_nuclei_diameter_um, condition_mapping
         )
         if df is not None and len(df) > 0:
             all_measurements.append(df)
@@ -373,12 +457,12 @@ def parse_args():
              f"segmentation (default: {' '.join(CHANNEL_NAMES)})",
     )
     parser.add_argument(
-        "--min-nuclei-diameter-px", type=int, default=MIN_NUCLEI_DIAMETER_PX,
-        help=f"Smallest nucleus diameter in pixels to keep (default: {MIN_NUCLEI_DIAMETER_PX})",
+        "--min-nuclei-diameter-um", type=float, default=MIN_NUCLEI_DIAMETER_UM,
+        help=f"Smallest nucleus diameter in micrometers to keep (default: {MIN_NUCLEI_DIAMETER_UM})",
     )
     parser.add_argument(
-        "--max-nuclei-diameter-px", type=int, default=MAX_NUCLEI_DIAMETER_PX,
-        help=f"Largest nucleus diameter in pixels to keep (default: {MAX_NUCLEI_DIAMETER_PX})",
+        "--max-nuclei-diameter-um", type=float, default=MAX_NUCLEI_DIAMETER_UM,
+        help=f"Largest nucleus diameter in micrometers to keep (default: {MAX_NUCLEI_DIAMETER_UM})",
     )
     parser.add_argument(
         "--condition-mapping", type=parse_condition_mapping, default=CONDITION_MAPPING,
@@ -392,5 +476,5 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     main(
-        args.data_dir, args.channel_names, args.min_nuclei_diameter_px, args.max_nuclei_diameter_px, args.condition_mapping,
+        args.data_dir, args.channel_names, args.min_nuclei_diameter_um, args.max_nuclei_diameter_um, args.condition_mapping,
     )
